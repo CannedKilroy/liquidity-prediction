@@ -1,0 +1,175 @@
+---
+title: "Data Cleaning"
+author: "CannedKilroy"
+date: "March 1, 2024"
+output:
+  html_document:
+    toc: true
+    toc_depth: '3'
+    df_print: paged
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+---
+
+# Introduction
+
+This notebook cleans the data set
+
+# Setup
+
+**Load Packages**
+
+```{r}
+if (!requireNamespace("RMariaDB", quietly = TRUE)) {
+  install.packages("RMariaDB")
+}
+
+if (!requireNamespace("DBI", quietly = TRUE)) {
+  install.packages("DBI")
+}
+
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+
+if (!requireNamespace("vistime", quietly = TRUE)) {
+  install.packages("vistime")
+}
+
+if (!requireNamespace("lubridate", quietly = TRUE)) {
+  install.packages("lubridate")
+}
+library(RMariaDB)
+library(DBI)
+library(ggplot2)
+library(vistime)
+library(lubridate)
+```
+
+**Database Credentials**
+
+```{r}
+db_name <- "crypto_test_1"
+db_user <- "root"
+db_password <- "root"
+db_host <- "localhost"
+```
+
+**Create a connection object**
+
+```{r}
+conn <- dbConnect(RMariaDB::MariaDB(), dbname = db_name, username = db_user, password = db_password, host = db_host)
+
+if (dbIsValid(conn)){
+  print("Connected successfully!")
+} else {
+  print("Connection failed.")
+}
+```
+
+# Explore db
+
+**Tables**
+
+```{r}
+tables = dbGetQuery(conn, "SHOW TABLES")
+print(tables)
+```
+
+**Check Data continuity**
+
+Since it is time series data, it is checked for continuity by looking at the logs for any network errors, db errors, etc. Depending on how many and how large the breaks are, we can prune the data or interpolate.
+
+```{r}
+db_min_time <- dbGetQuery(conn, "SELECT min(date_time) FROM orderbook")[1,1]
+db_max_time <- dbGetQuery(conn, "SELECT max(date_time) FROM orderbook")[1,1]
+error_min_time <- dbGetQuery(conn, "SELECT min(date_time) FROM logs")[1,1]
+error_max_time <- dbGetQuery(conn, "SELECT max(date_time) FROM logs")[1,1]
+
+cat("Database start time: ", db_min_time, "\n")
+cat("Database end time: ", db_max_time, "\n")
+cat("First error start time: ", error_min_time, "\n")
+cat("Last error start time: ", error_max_time, "\n")
+
+errors_count <- as.integer(dbGetQuery(conn, "SELECT count(*) FROM logs")[1,1])
+
+count_outside_errors <- dbGetQuery(conn,
+                           sprintf("SELECT COUNT(*)
+                                   AS data_outside_errors
+                                   FROM orderbook 
+                                   WHERE date_time NOT BETWEEN '%s' AND '%s'", 
+                                   error_min_time, error_max_time))
+
+options(scipen=999)
+error_type_times <- dbGetQuery(conn, "SELECT
+                               error_type, count(*), max(created_at), min(created_at), min(date_time), max(date_time)
+                               FROM logs
+                               GROUP BY error_type
+                               ORDER BY count(*) desc")
+
+print(error_type_times)
+error_1_time <- error_type_times[1, 'max(created_at)'] - error_type_times[1, 'min(created_at)']
+error_2_time <- error_type_times[2, 'max(created_at)'] - error_type_times[2, 'min(created_at)']
+```
+
+The data is taken from **`r db_min_time`** to **`r db_max_time`**, approximately `r db_max_time - db_min_time` days. There are `r errors_count` errors logged of the type: *`r error_type_times$error_type`*. The *`r  error_type_times[1,'error_type']`* lasted for `r (as.integer(error_1_time)/1000)/60` minutes, and the error *`r error_type_times[2,'error_type']`* lasted for `r as.integer(error_2_time)/1000` seconds`.
+
+```{r}
+
+timeline_data <- data.frame(
+  start = c(db_min_time,
+            error_min_time,
+            error_type_times[1, 'min(date_time)'],
+            error_type_times[2, 'min(date_time)']),
+  end = c(db_max_time,
+          error_max_time,
+          error_type_times[1, 'max(date_time)'],
+          error_type_times[2, 'max(date_time)']),
+  group = c("Database",
+            "Errors",
+            error_type_times[1, 'error_type'],
+            error_type_times[2, 'error_type']),
+  event = c("Database",
+            "Errors",
+            error_type_times[1, 'error_type'],
+            error_type_times[2, 'error_type'])
+)
+
+# Generate the timeline
+vistime(timeline_data,
+        title = "Timeline of Database Activity and Errors")
+```
+The ValueError was raised before the data was scraped. However the ConnectionResetError occurred during the data scraping. 
+We can try to check whether there any holes in the data during that time. 
+
+```{r}
+
+for (table in tables){
+  if (table != 'logs'){
+    
+  } 
+}
+
+
+
+data_during_reseterror <- dbGetQuery(
+  conn, sprintf(
+    "SELECT COUNT(*)
+    FROM orderbook 
+    WHERE created_at BETWEEN %s AND %s",
+    error_type_times[1, 'min(created_at)'],
+    error_type_times[1, 'max(created_at)']
+    )
+  )
+print(data_during_reseterror)
+```
+
+
+
+
+
+

@@ -143,29 +143,38 @@ timeline_data <- data.frame(
 vistime(timeline_data,
         title = "Timeline of Database Activity and Errors")
 ```
-The ValueError was raised before the data was scraped. However the ConnectionResetError occurred during the data scraping. 
-We can try to check whether there any holes in the data during that time. 
-
+The ValueError was raised before the data was scraped, so we don't need to worry about it. However the ConnectionResetError occurred during the data scraping. We can try to check whether there any holes in the data during that time, and what caused / where the error occurred.
 ```{r}
-
-for (table in tables){
-  if (table != 'logs'){
-    
-  } 
-}
-
-
-
+print(dbGetQuery(conn, "SELECT * FROM logs WHERE error_type = 'ConnectionResetError'"))
+```
+The `ConnectionResetError` was only for Bybit and was across all streams. We can check if there was any data loss for the Bybit streams during those times. 
+```{r}
 data_during_reseterror <- dbGetQuery(
   conn, sprintf(
     "SELECT COUNT(*)
     FROM orderbook 
-    WHERE created_at BETWEEN %s AND %s",
+    WHERE (created_at BETWEEN %s AND %s)
+    AND (exchange = 'Bybit')",
     error_type_times[1, 'min(created_at)'],
     error_type_times[1, 'max(created_at)']
     )
   )
 print(data_during_reseterror)
+```
+Bybit data is still being scraped during the error, so we have to check the data on a more granular level for holes. 
+```{r}
+data <- dbGetQuery(
+  conn,
+  "SELECT logs.created_at AS LOGS_CREATED_AT, orderbook.date_time, orderbook.created_at
+   FROM orderbook
+   JOIN logs ON orderbook.exchange = logs.exchange
+       AND orderbook.created_at BETWEEN logs.created_at AND (logs.created_at)+10
+   WHERE logs.exchange = 'Bybit'
+   AND orderbook.exchange = 'Bybit'
+   AND logs.error_type = 'ConnectionResetError'
+   LIMIT 600"
+)
+print(data)
 ```
 
 

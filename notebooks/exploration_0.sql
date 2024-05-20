@@ -8,7 +8,6 @@ concern to require ML to optimize order routing
 and execution within crypto futures?
 */
 
-
 -- --------------------------------------------------------------
 -- EXPLORE DB
 -- --------------------------------------------------------------
@@ -74,6 +73,8 @@ MAX(volume_inbalance) AS MAX_INBALANCE
 FROM orderbook_spread;
 -- This is not useful now but will be later
 
+-- The orders need to be aggregated for more info 
+-- This is fairly complex and will be done in python.
 
 -- --------------------------------------------------------------
 -- EXPLORE trades
@@ -85,7 +86,7 @@ FROM orderbook_spread;
 -- Sample of 20 trades
 SELECT *
 FROM trades
-order by
+ORDER BY
 created_at
 LIMIT 20;
 
@@ -102,21 +103,6 @@ SELECT AVG(executed_price) AS AVERAGE_executed_price,
 MIN(executed_price) AS MIN_executed_price,
 MAX(executed_price) AS MAX_executed_price
 FROM trades;
-
-
-
-SELECT orderbook.*, trades.*
-FROM orderbook
-INNER JOIN trades
-ON orderbook.exchage = trades.exchange
-LIMIT 200;
-
-SELECT orderbook.*, trades.*
-FROM orderbook
-INNER JOIN trades
-ON orderbook.exchange = trades.exchange
-AND ABS(DATEDIFF(second, orderbook.created_at, trades.created_at)) <= 1;  -- Using seconds for broader compatibility
-
 
 -- --------------------------------------------------------------
 -- EXPLORE logs
@@ -136,46 +122,32 @@ INTO
 FROM 
     orderbook;
 SELECT @min_date_time, @max_date_time;
+-- The data is taken from '2024-05-17 01:52:07' to '2024-05-18 18:00:54'
 
 -- Are there any logs during the data?
 SELECT COUNT(*) 
 AS LOGS_COUNT 
 FROM logs;
 
-select * from logs order by date_time asc;
+SELECT * FROM logs ORDER BY date_time ASC;
 
-select count(*)
-from logs
-where date_time
-between @min_date_time and @max_date_time;
+SELECT COUNT(*)
+FROM logs
+WHERE date_time
+BETWEEN @min_date_time AND @max_date_time;
 -- There are some logs during the data being collected
 
--- Time diff between end of the data and the logs
-SELECT 
-    TIMEDIFF(
-        (SELECT MAX(date_time) FROM logs), 
-        @max_date_time
-    ) AS time_difference;
 
-
--- IDEA: I can give each trade the orderbook in another column given some time windo
--- Join with the orderbook 
-
--- Create a new column for the bid ask spread
--- alter table orderbook add column spread float(24); 
--- SET SQL_SAFE_UPDATES = 1;
--- SET innodb_lock_wait_timeout = 240;
--- update orderbook 
--- set spread = json_extract(asks, '$[0][0]')-json_extract(bids, '$[0][0]');
-
--- we can drop the null columns for simplicity 
--- ALTER TABLE trades 
--- DROP COLUMN fees,
---  DROP COLUMN fee,
---  DROP COLUMN taker_maker,
---  DROP COLUMN order_type,
---  DROP COLUMN order_id;
-
--- SELECT JSON_EXTRACT('{"a":1,"b":"stringdata"}','$.b');
--- https://stackoverflow.com/questions/1037471/why-the-rows-returns-by-explain-is-not-equal-to-count
-
+-- We dont need the logs for every stream
+SELECT *
+FROM logs
+WHERE date_time
+BETWEEN @min_date_time AND @max_date_time
+AND stream = 'watch_trades'
+ORDER BY date_time ASC;
+/*
+There were a few instances of logs during the data being scraped. Near the start
+a request timed out with the websocket heart beat missing. A connection reset error
+throughout the dataset, and finally a network error at the end. None of the errors
+were persistant. 
+*/ 

@@ -16,13 +16,10 @@ output:
 ---
 
 # Introduction
-
-This notebook cleans the data set
+This notebook further explores the data further.
 
 # Setup
-
 **Load Packages**
-
 ```{r}
 if (!requireNamespace("RMariaDB", quietly = TRUE)) {
   install.packages("RMariaDB")
@@ -51,16 +48,14 @@ library(lubridate)
 ```
 
 **Database Credentials**
-
 ```{r}
-db_name <- "crypto_test_1"
+db_name <- "data_crypto"
 db_user <- "root"
 db_password <- "root"
 db_host <- "localhost"
 ```
 
 **Create a connection object**
-
 ```{r}
 conn <- dbConnect(RMariaDB::MariaDB(), dbname = db_name, username = db_user, password = db_password, host = db_host)
 
@@ -74,14 +69,12 @@ if (dbIsValid(conn)){
 # Explore db
 
 **Tables**
-
 ```{r}
 tables = dbGetQuery(conn, "SHOW TABLES")
 print(tables)
 ```
 
 **Check Data continuity**
-
 Since it is time series data, it is checked for continuity by looking at the logs for any network errors, db errors, etc. Depending on how many and how large the breaks are, we can prune the data or interpolate.
 
 ```{r}
@@ -104,7 +97,6 @@ count_outside_errors <- dbGetQuery(conn,
                                    WHERE date_time NOT BETWEEN '%s' AND '%s'", 
                                    error_min_time, error_max_time))
 
-options(scipen=999)
 error_type_times <- dbGetQuery(conn, "SELECT
                                error_type, count(*), max(created_at), min(created_at), min(date_time), max(date_time)
                                FROM logs
@@ -114,9 +106,11 @@ error_type_times <- dbGetQuery(conn, "SELECT
 print(error_type_times)
 error_1_time <- error_type_times[1, 'max(created_at)'] - error_type_times[1, 'min(created_at)']
 error_2_time <- error_type_times[2, 'max(created_at)'] - error_type_times[2, 'min(created_at)']
+error_3_time <- error_type_times[3, 'max(created_at)'] - error_type_times[3, 'min(created_at)']
+
 ```
 
-The data is taken from **`r db_min_time`** to **`r db_max_time`**, approximately `r db_max_time - db_min_time` days. There are `r errors_count` errors logged of the type: *`r error_type_times$error_type`*. The *`r  error_type_times[1,'error_type']`* lasted for `r (as.integer(error_1_time)/1000)/60` minutes, and the error *`r error_type_times[2,'error_type']`* lasted for `r as.integer(error_2_time)/1000` seconds`.
+The data is taken from **`r db_min_time`** to **`r db_max_time`**, approximately `r db_max_time - db_min_time` days. There are `r errors_count` errors logged of the type: *`r error_type_times$error_type`*. The *`r  error_type_times[1,'error_type']`* lasted for `r (as.integer(error_1_time)/1000)/60` minutes, the *`r error_type_times[2,'error_type']`* error lasted for `r as.integer(error_2_time)/1000` seconds, and finally the *`r error_type_times[3,'error_type']`* error lasted for `r as.integer(error_3_time)/1000` seconds`. 
 
 ```{r}
 
@@ -124,26 +118,33 @@ timeline_data <- data.frame(
   start = c(db_min_time,
             error_min_time,
             error_type_times[1, 'min(date_time)'],
-            error_type_times[2, 'min(date_time)']),
+            error_type_times[2, 'min(date_time)'],
+            error_type_times[3, 'min(date_time)']
+            ),
   end = c(db_max_time,
           error_max_time,
           error_type_times[1, 'max(date_time)'],
-          error_type_times[2, 'max(date_time)']),
+          error_type_times[2, 'max(date_time)'],
+          error_type_times[3, 'min(date_time)']
+          ),
   group = c("Database",
             "Errors",
             error_type_times[1, 'error_type'],
-            error_type_times[2, 'error_type']),
+            error_type_times[2, 'error_type'],
+            error_type_times[3, 'error_type']
+            ),
   event = c("Database",
             "Errors",
             error_type_times[1, 'error_type'],
-            error_type_times[2, 'error_type'])
+            error_type_times[2, 'error_type'],
+            error_type_times[3, 'error_type'])
 )
 
 # Generate the timeline
 vistime(timeline_data,
         title = "Timeline of Database Activity and Errors")
 ```
-The ValueError was raised before the data was scraped, so we don't need to worry about it. However the ConnectionResetError occurred during the data scraping. We can try to check whether there any holes in the data during that time, and what caused / where the error occurred.
+The NetworkError was raised at end of when the data was scraped, so we don't need to worry about it. However the ConnectionResetError occurred during the data scraping, as did the RequestTimeout error.
 ```{r}
 print(dbGetQuery(conn, "SELECT * FROM logs WHERE error_type = 'ConnectionResetError'"))
 ```
@@ -168,7 +169,7 @@ data <- dbGetQuery(
   "SELECT logs.created_at AS LOGS_CREATED_AT, orderbook.date_time, orderbook.created_at
    FROM orderbook
    JOIN logs ON orderbook.exchange = logs.exchange
-       AND orderbook.created_at BETWEEN logs.created_at AND (logs.created_at)+10
+       AND orderbook.created_at BETWEEN logs.created_at AND (logs.created_at)+1000
    WHERE logs.exchange = 'Bybit'
    AND orderbook.exchange = 'Bybit'
    AND logs.error_type = 'ConnectionResetError'

@@ -5,3 +5,4 @@
 renv/
 notebooks/*.html
 data/
+notebooks/*.ipynb_checkpoints/

@@ -20,7 +20,7 @@ SELECT * FROM logs LIMIT 50;
 SELECT * FROM ohlcv LIMIT 50;
 SELECT * FROM orderbook LIMIT 50;
 SELECT * FROM ticker LIMIT 50;
-SELECT * FROM trades LIMIT 50;
+SELECT * FROM trades order by created_at LIMIT 50;
 
 
 -- --------------------------------------------------------------
